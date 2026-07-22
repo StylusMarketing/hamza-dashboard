@@ -1,3 +1,4 @@
+// v1.1 - adds Video Notes to Skill Acquisition
 import React, { useState, useEffect, useRef, useContext } from "react";
 import { AuthProvider, AuthContext, useStore } from "./auth.jsx";
 
