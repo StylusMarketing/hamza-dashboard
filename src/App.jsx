@@ -1005,6 +1005,17 @@ function SkillsPage() {
   const [adding, setAdding] = useState(false);
   const [form, setForm] = useState({name:"",category:""});
   const [logForm, setLogForm] = useState({skillId:null,duration:"",notes:""});
+  const [videoNotes, setVideoNotes] = useStore("v2_video_notes", []);
+  const [addingVid, setAddingVid] = useState(false);
+  const [vidForm, setVidForm] = useState({title:"",url:"",notes:""});
+  const addVideoNote = () => {
+    if(!vidForm.title.trim() && !vidForm.url.trim()) return;
+    let url = vidForm.url.trim();
+    if(url && !/^https?:\/\//i.test(url)) url = "https://"+url;
+    setVideoNotes(p=>[{id:uid(),date:today(),title:vidForm.title.trim()||"Untitled video",url,notes:vidForm.notes.trim()},...p]);
+    setVidForm({title:"",url:"",notes:""}); setAddingVid(false);
+  };
+  const delVideoNote = (id) => setVideoNotes(p=>p.filter(v=>v.id!==id));
 
   const colors = [C.blue,C.purple,C.accent,C.green,C.red];
   const addSkill = () => {if(!form.name.trim())return;setSkills(p=>[...p,{id:uid(),name:form.name.trim(),category:form.category.trim()||"General",progress:0,color:colors[p.length%5],sessions:[]}]);setForm({name:"",category:""});setAdding(false);};
@@ -1067,6 +1078,44 @@ function SkillsPage() {
             <tr key={se.key} style={{borderBottom:`1px solid ${C.border}`}}><td style={{padding:"6px 8px",fontFamily:fonts.mono,fontSize:11,color:C.textDim}}>{se.date}</td><td style={{padding:"6px 8px",color:se.color}}>{se.skill}</td><td style={{padding:"6px 8px",fontFamily:fonts.mono,color:C.text}}>{Math.round(se.duration/60*10)/10}</td><td style={{padding:"6px 8px",color:C.textMuted}}>{se.notes}</td></tr>
           )}{skills.flatMap(s=>s.sessions||[]).length===0&&<tr><td colSpan={4} style={{padding:"12px",textAlign:"center",color:C.textDim}}>No sessions logged yet.</td></tr>}</tbody>
         </table>
+      </Card>
+
+      {/* Video Notes */}
+      <Card style={{padding:16,marginTop:20}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
+          <span style={{fontFamily:fonts.sans,fontSize:11,fontWeight:600,color:C.textDim,textTransform:"uppercase",letterSpacing:1}}>🎬 Video Notes</span>
+          <Btn onClick={()=>setAddingVid(!addingVid)} active={addingVid} color={C.accent}>+ Add Video</Btn>
+        </div>
+        {addingVid&&(
+          <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:14}}>
+            <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+              <Input value={vidForm.title} onChange={v=>setVidForm(p=>({...p,title:v}))} placeholder="Video title..." style={{flex:2,minWidth:160}}/>
+              <Input value={vidForm.url} onChange={v=>setVidForm(p=>({...p,url:v}))} placeholder="Video link (paste URL)..." style={{flex:2,minWidth:160}}/>
+            </div>
+            <textarea value={vidForm.notes} onChange={e=>setVidForm(p=>({...p,notes:e.target.value}))} placeholder="Your notes from this video..." style={{width:"100%",minHeight:80,background:C.bg,border:`1px solid ${C.border}`,borderRadius:8,color:C.text,fontFamily:fonts.sans,fontSize:13,padding:"10px 12px",outline:"none",resize:"vertical",boxSizing:"border-box"}}/>
+            <div><Btn onClick={addVideoNote} active color={C.green}>Save Note</Btn></div>
+          </div>
+        )}
+        {videoNotes.length===0?(
+          <div style={{padding:"12px",textAlign:"center",color:C.textDim,fontFamily:fonts.sans,fontSize:12}}>No video notes yet. Add one above.</div>
+        ):(
+          <div style={{display:"flex",flexDirection:"column",gap:10}}>
+            {videoNotes.map(v=>(
+              <div key={v.id} style={{background:C.bg,border:`1px solid ${C.border}`,borderRadius:10,padding:"12px 14px"}}>
+                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
+                  <div style={{minWidth:0}}>
+                    {v.url?<a href={v.url} target="_blank" rel="noopener noreferrer" style={{display:"block",fontFamily:fonts.sans,fontSize:14,fontWeight:600,color:C.accent,textDecoration:"none",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>▶ {v.title}</a>:<span style={{fontFamily:fonts.sans,fontSize:14,fontWeight:600,color:C.text}}>{v.title}</span>}
+                  </div>
+                  <div style={{display:"flex",alignItems:"center",gap:10,flexShrink:0}}>
+                    <span style={{fontFamily:fonts.mono,fontSize:10,color:C.textDim}}>{v.date}</span>
+                    <span onClick={()=>delVideoNote(v.id)} title="Delete" style={{color:C.textDim,cursor:"pointer",fontSize:13}}>✕</span>
+                  </div>
+                </div>
+                {v.notes&&<div style={{marginTop:6,fontFamily:fonts.sans,fontSize:13,color:C.textMuted,whiteSpace:"pre-wrap",lineHeight:1.5}}>{v.notes}</div>}
+              </div>
+            ))}
+          </div>
+        )}
       </Card>
     </div>
   );
