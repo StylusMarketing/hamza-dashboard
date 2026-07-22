@@ -1734,6 +1734,7 @@ function Dashboard() {
       .dash-kanban { display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px; overflow-x: auto; }
       .dash-mobile-header { display: none; }
       .dash-overlay { display: none; }
+      .dash-sidebar-mobile { display: none; }
       .dash-sidebar-close { display: none !important; }
       @media (max-width: 768px) {
         .dash-grid-2 { grid-template-columns: 1fr !important; }
