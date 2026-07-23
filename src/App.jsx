@@ -549,6 +549,12 @@ function FitnessPage() {
     setAddingS(false);
   };
 
+  const deleteSession = (id) => {
+    if(!window.confirm("Delete this workout? This can't be undone."))return;
+    setSessions(p=>p.filter(s=>s.id!==id));
+    setMode("list");setDetailId(null);
+  };
+
   const weekSessions = sessions.filter(s=>(new Date()-new Date(s.date))/864e5<=7);
   const weekMuscles = [...new Set(weekSessions.map(s=>s.muscle))];
   const lastWeight = body.length>0?body[0]:null;
@@ -571,6 +577,7 @@ function FitnessPage() {
               <div style={{display:"flex",alignItems:"center",gap:8}}><span style={{fontFamily:fonts.serif,fontSize:20,fontWeight:500,color:C.text}}>{session.name}</span><Badge color={gi.color}>{gi.icon} {session.muscle}</Badge></div>
               <span style={{fontFamily:fonts.mono,fontSize:10,color:C.textDim}}>{session.date} · {session.time}</span>
             </div>
+            <button onClick={()=>deleteSession(session.id)} style={{background:"none",border:`1px solid ${C.border}`,color:C.red,borderRadius:8,padding:"6px 12px",cursor:"pointer",fontSize:12,fontFamily:fonts.sans,display:"flex",alignItems:"center",gap:6}}>🗑 Delete</button>
           </div>
           <div className="dash-stats" style={{marginBottom:16}}>
             <StatCard label="Exercises" value={session.exercises.length} color={gi.color}/>
