@@ -498,6 +498,7 @@ function FitnessPage() {
   const [showPresets, setShowPresets] = useState(false);
   const [addingB, setAddingB] = useState(false);
   const [addingS, setAddingS] = useState(false);
+  const [confirmDel, setConfirmDel] = useState(false);
   const [bForm, setBForm] = useState({weight:"",bodyFat:"",notes:""});
   const [sForm, setSForm] = useState({bedtime:"23:00",wakeup:"06:30"});
 
@@ -550,9 +551,8 @@ function FitnessPage() {
   };
 
   const deleteSession = (id) => {
-    if(!window.confirm("Delete this workout? This can't be undone."))return;
     setSessions(p=>p.filter(s=>s.id!==id));
-    setMode("list");setDetailId(null);
+    setConfirmDel(false);setMode("list");setDetailId(null);
   };
 
   const weekSessions = sessions.filter(s=>(new Date()-new Date(s.date))/864e5<=7);
@@ -572,12 +572,19 @@ function FitnessPage() {
         <SectionHead icon="💪" title="Fitness" quote='"The pain you feel today will be the strength you feel tomorrow. Push through it."' />
         <Card style={{padding:16}}>
           <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:16}}>
-            <button onClick={()=>{setMode("list");setDetailId(null);}} style={{background:"none",border:`1px solid ${C.border}`,color:C.textMuted,borderRadius:8,width:32,height:32,cursor:"pointer",fontSize:14,display:"flex",alignItems:"center",justifyContent:"center"}}>←</button>
+            <button onClick={()=>{setConfirmDel(false);setMode("list");setDetailId(null);}} style={{background:"none",border:`1px solid ${C.border}`,color:C.textMuted,borderRadius:8,width:32,height:32,cursor:"pointer",fontSize:14,display:"flex",alignItems:"center",justifyContent:"center"}}>←</button>
             <div style={{flex:1}}>
               <div style={{display:"flex",alignItems:"center",gap:8}}><span style={{fontFamily:fonts.serif,fontSize:20,fontWeight:500,color:C.text}}>{session.name}</span><Badge color={gi.color}>{gi.icon} {session.muscle}</Badge></div>
               <span style={{fontFamily:fonts.mono,fontSize:10,color:C.textDim}}>{session.date} · {session.time}</span>
             </div>
-            <button onClick={()=>deleteSession(session.id)} style={{background:"none",border:`1px solid ${C.border}`,color:C.red,borderRadius:8,padding:"6px 12px",cursor:"pointer",fontSize:12,fontFamily:fonts.sans,display:"flex",alignItems:"center",gap:6}}>🗑 Delete</button>
+            {confirmDel?(
+              <div style={{display:"flex",alignItems:"center",gap:8}}>
+                <button onClick={()=>deleteSession(session.id)} style={{background:C.red,border:`1px solid ${C.red}`,color:"#fff",borderRadius:8,padding:"6px 12px",cursor:"pointer",fontSize:12,fontFamily:fonts.sans}}>Confirm delete</button>
+                <button onClick={()=>setConfirmDel(false)} style={{background:"none",border:`1px solid ${C.border}`,color:C.textMuted,borderRadius:8,padding:"6px 12px",cursor:"pointer",fontSize:12,fontFamily:fonts.sans}}>Cancel</button>
+              </div>
+            ):(
+              <button onClick={()=>setConfirmDel(true)} style={{background:"none",border:`1px solid ${C.border}`,color:C.red,borderRadius:8,padding:"6px 12px",cursor:"pointer",fontSize:12,fontFamily:fonts.sans,display:"flex",alignItems:"center",gap:6}}>🗑 Delete</button>
+            )}
           </div>
           <div className="dash-stats" style={{marginBottom:16}}>
             <StatCard label="Exercises" value={session.exercises.length} color={gi.color}/>
