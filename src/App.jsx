@@ -1,4 +1,4 @@
-// v1.1 - adds Video Notes to Skill Acquisition
+// v1.2 - Video Notes + fix workout save (auto-include in-progress exercise)
 import React, { useState, useEffect, useRef, useContext } from "react";
 import { AuthProvider, AuthContext, useStore } from "./auth.jsx";
 
@@ -516,10 +516,21 @@ function FitnessPage() {
     setExForm({name:"",sets:[{reps:"",weight:""}]});setShowPresets(false);
   };
 
+  // True if the Add Exercise form currently holds a fillable exercise
+  const pendingExercise = () => {
+    if(!exForm.name.trim())return null;
+    const valid = exForm.sets.filter(s=>s.reps||s.weight).map(s=>({reps:parseInt(s.reps)||0,weight:parseFloat(s.weight)||0}));
+    if(valid.length===0)return null;
+    return {id:uid(),name:exForm.name.trim(),sets:valid};
+  };
+
   const saveSession = () => {
-    if(exercises.length===0)return;
-    setSessions(p=>[{id:uid(),name:sessionName.trim()||`${muscle} Day`,muscle,exercises,date:today(),time:new Date().toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"})},...p]);
-    setExercises([]);setSessionName("");setMode("list");
+    // Fold in any exercise still sitting in the Add Exercise form so nothing is silently lost
+    const pending = pendingExercise();
+    const all = pending ? [...exercises, pending] : exercises;
+    if(all.length===0)return;
+    setSessions(p=>[{id:uid(),name:sessionName.trim()||`${muscle} Day`,muscle,exercises:all,date:today(),time:new Date().toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"})},...p]);
+    setExercises([]);setSessionName("");setExForm({name:"",sets:[{reps:"",weight:""}]});setMode("list");
   };
 
   const addBody = () => {
@@ -602,7 +613,7 @@ function FitnessPage() {
               <button onClick={()=>{setMode("list");setExercises([]);}} style={{background:"none",border:`1px solid ${C.border}`,color:C.textMuted,borderRadius:8,width:32,height:32,cursor:"pointer",fontSize:14,display:"flex",alignItems:"center",justifyContent:"center"}}>←</button>
               <span style={{fontFamily:fonts.serif,fontSize:20,fontWeight:500,color:C.text}}>Log Workout</span>
             </div>
-            {exercises.length>0&&<Btn onClick={saveSession} active color={C.green}>Save ({exercises.length})</Btn>}
+            {(exercises.length>0||pendingExercise())&&<Btn onClick={saveSession} active color={C.green}>Save ({exercises.length+(pendingExercise()?1:0)})</Btn>}
           </div>
 
           <Input value={sessionName} onChange={setSessionName} placeholder="Session name (e.g. Push Day)..." style={{marginBottom:10}}/>
