@@ -11,7 +11,7 @@ const SK = {
   network: "v2_network", projects: "v2_projects", ideas: "v2_ideas",
   businessHabits: "v2_biz_habits", successLog: "v2_success",
   bodyMetrics: "v2_body", home: "v2_home", car: "v2_car",
-  junkFood: "v2_junk",
+  junkFood: "v2_junk", events: "v2_events",
 };
 
 // ── Fonts ──────────────────────────────────────────────────────
@@ -347,8 +347,59 @@ function normalizeTask(t){
   };
 }
 
+// ── Calendar Events ────────────────────────────────────────────
+const EVENT_TYPES = [
+  {v:"prayer", label:"Prayer", color:C.purple},
+  {v:"sleep", label:"Sleep", color:C.blue},
+  {v:"birthday", label:"Birthday", color:C.green},
+  {v:"health", label:"Health", color:C.accent},
+  {v:"personal", label:"Personal", color:C.red},
+  {v:"other", label:"Other", color:C.textMuted},
+];
+const EVT_COLOR = Object.fromEntries(EVENT_TYPES.map(t=>[t.v,t.color]));
+const RECURS = [
+  {v:"daily", label:"Every day"},
+  {v:"weekly", label:"Every week"},
+  {v:"annual", label:"Every year"},
+  {v:"once", label:"One time"},
+];
+const WEEKDAYS = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+const DEFAULT_EVENTS = [
+  {id:uid(), title:"Fajr",    type:"prayer", recur:"daily", time:"05:30", date:"", weekday:0},
+  {id:uid(), title:"Duhr",    type:"prayer", recur:"daily", time:"13:15", date:"", weekday:0},
+  {id:uid(), title:"Asr",     type:"prayer", recur:"daily", time:"16:45", date:"", weekday:0},
+  {id:uid(), title:"Maghrib", type:"prayer", recur:"daily", time:"19:30", date:"", weekday:0},
+  {id:uid(), title:"Isha",    type:"prayer", recur:"daily", time:"21:30", date:"", weekday:0},
+  {id:uid(), title:"Sleep",   type:"sleep",  recur:"daily", time:"23:00", date:"", weekday:0},
+];
+
+function eventOccursOn(ev, d){
+  const ds = `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`;
+  if(ev.recur==="daily") return true;
+  if(ev.recur==="weekly") return d.getDay()===Number(ev.weekday);
+  if(ev.recur==="annual"){ if(!ev.date) return false; const a=new Date(ev.date+"T00:00:00"); return a.getMonth()===d.getMonth() && a.getDate()===d.getDate(); }
+  if(ev.recur==="once") return ev.date===ds;
+  return false;
+}
+
+const SYNODIC = 29.530588853;
+function moonAge(d){
+  const known = Date.UTC(2000,0,6,18,14)/86400000;
+  const now = d.getTime()/86400000;
+  return (((now-known)%SYNODIC)+SYNODIC)%SYNODIC;
+}
+function moonPhase(d){
+  const pts=[{a:0,l:"New Moon",e:"🌑"},{a:7.38,l:"First Quarter",e:"🌓"},{a:14.77,l:"Full Moon",e:"🌕"},{a:22.15,l:"Last Quarter",e:"🌗"}];
+  const dist=(age,a)=>{const x=Math.abs(age-a);return Math.min(x,SYNODIC-x);};
+  const ageY=moonAge(new Date(d.getTime()-864e5)), ageT=moonAge(d), ageN=moonAge(new Date(d.getTime()+864e5));
+  for(const p of pts){ const dt=dist(ageT,p.a); if(dt<=0.6 && dt<dist(ageY,p.a) && dt<=dist(ageN,p.a)) return p; }
+  return null;
+}
+
 function TasksPage() {
   const [tasksRaw, setTasks] = useStore(SK.tasks, []);
+  const [events, setEvents] = useStore(SK.events, DEFAULT_EVENTS);
+  const [evDraft, setEvDraft] = useState(null);
   const [filter, setFilter] = useState("All");
   const [search, setSearch] = useState("");
   const [dragId, setDragId] = useState(null);
@@ -380,6 +431,18 @@ function TasksPage() {
   const toggleDone = (id) => setTasks(p=>(Array.isArray(p)?p:[]).map(normalizeTask).map(t=>t.id===id?{...t,done:!t.done}:t));
   const removeTask = (id) => setTasks(p=>(Array.isArray(p)?p:[]).map(normalizeTask).filter(t=>t.id!==id));
   const move = (id,board) => setTasks(p=>(Array.isArray(p)?p:[]).map(normalizeTask).map(t=>t.id===id?{...t,board}:t));
+
+  const evList = Array.isArray(events) ? events : DEFAULT_EVENTS;
+  const openEvNew = (dateStr="") => setEvDraft({id:uid(),title:"",type:"personal",recur:dateStr?"once":"daily",time:"",date:dateStr||today(),weekday:new Date().getDay(),_new:true});
+  const openEvEdit = (ev) => setEvDraft({...ev,_new:false});
+  const evUpd = (k,v) => setEvDraft(d=>({...d,[k]:v}));
+  const saveEv = () => {
+    if(!evDraft.title.trim()) return;
+    const {_new,...clean} = evDraft;
+    setEvents(p=>{ const arr=Array.isArray(p)?p:[]; return arr.some(x=>x.id===clean.id)?arr.map(x=>x.id===clean.id?clean:x):[...arr,clean]; });
+    setEvDraft(null);
+  };
+  const deleteEv = () => { setEvents(p=>(Array.isArray(p)?p:[]).filter(x=>x.id!==evDraft.id)); setEvDraft(null); };
 
   const filters = ["All",...CATEGORIES,"Urgent","Done"];
   const q = search.trim().toLowerCase();
@@ -467,22 +530,32 @@ function TasksPage() {
             <Btn onClick={()=>setCalDate(new Date(cy,cm+1,1))} style={{padding:"4px 10px"}}>▶</Btn>
             <span style={{fontFamily:fonts.serif,fontSize:18,fontWeight:500,color:C.text,marginLeft:6}}>{MONTHS[cm]} {cy}</span>
           </div>
-          <span style={{fontFamily:fonts.sans,fontSize:11,color:C.textDim}}>Tasks plotted by due date</span>
+          <Btn onClick={()=>openEvNew()} color={C.purple} active style={{fontSize:12,fontWeight:600}}>+ Event</Btn>
+        </div>
+        <div style={{display:"flex",gap:12,flexWrap:"wrap",marginBottom:12}}>
+          {EVENT_TYPES.map(t=><span key={t.v} style={{display:"inline-flex",alignItems:"center",gap:5,fontFamily:fonts.sans,fontSize:10,color:C.textDim}}><span style={{width:8,height:8,borderRadius:"50%",background:t.color}}/>{t.label}</span>)}
+          <span style={{fontFamily:fonts.sans,fontSize:10,color:C.textDim,marginLeft:"auto"}}>Tasks + events plotted by date · click any to edit</span>
         </div>
         <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:4}}>
           {["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map(d=><div key={d} style={{fontFamily:fonts.sans,fontSize:10,fontWeight:600,color:C.textDim,textTransform:"uppercase",textAlign:"center",padding:"2px 0"}}>{d}</div>)}
           {cells.map((d,i)=>{
-            if(d===null) return <div key={i} style={{minHeight:78}}/>;
+            if(d===null) return <div key={i} style={{minHeight:92}}/>;
             const ds=`${cy}-${pad2(cm+1)}-${pad2(d)}`;
-            const dayTasks=tasksOn(d);
+            const dObj=new Date(cy,cm,d);
             const isToday=ds===todayStr;
+            const items=[];
+            const mp=moonPhase(dObj);
+            if(mp) items.push({key:"moon"+d,label:`${mp.e} ${mp.l}`,color:C.textMuted,time:"",onClick:null,done:false});
+            evList.filter(ev=>eventOccursOn(ev,dObj)).forEach(ev=>items.push({key:ev.id,label:(ev.time?ev.time+" ":"")+ev.title,color:EVT_COLOR[ev.type]||C.textMuted,time:ev.time||"",onClick:()=>openEvEdit(ev),done:false}));
+            list.filter(t=>t.due===ds).forEach(t=>items.push({key:"t"+t.id,label:t.title,color:PRI_COLOR[t.priority],time:"",onClick:()=>openEdit(t),done:t.done}));
+            items.sort((a,b)=>{ if(a.time&&b.time) return a.time<b.time?-1:1; if(a.time) return -1; if(b.time) return 1; return 0; });
             return (
-              <div key={i} style={{minHeight:78,background:C.bg,border:`1px solid ${isToday?C.accent:C.border}`,borderRadius:8,padding:4,overflow:"hidden"}}>
+              <div key={i} onClick={()=>openEvNew(ds)} style={{minHeight:92,background:C.bg,border:`1px solid ${isToday?C.accent:C.border}`,borderRadius:8,padding:4,overflow:"hidden",cursor:"pointer"}}>
                 <div style={{fontFamily:fonts.mono,fontSize:10,color:isToday?C.accent:C.textDim,fontWeight:isToday?700:400,textAlign:"right",marginBottom:2}}>{d}</div>
-                {dayTasks.slice(0,3).map(t=>(
-                  <div key={t.id} onClick={()=>openEdit(t)} title={t.title} style={{background:`${PRI_COLOR[t.priority]}22`,borderLeft:`2px solid ${PRI_COLOR[t.priority]}`,borderRadius:3,padding:"1px 4px",marginBottom:2,cursor:"pointer",fontFamily:fonts.sans,fontSize:9.5,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",textDecoration:t.done?"line-through":"none",opacity:t.done?.5:1}}>{t.title}</div>
+                {items.slice(0,3).map(it=>(
+                  <div key={it.key} onClick={it.onClick?(e=>{e.stopPropagation();it.onClick();}):undefined} title={it.label} style={{background:`${it.color}22`,borderLeft:`2px solid ${it.color}`,borderRadius:3,padding:"1px 4px",marginBottom:2,cursor:it.onClick?"pointer":"default",fontFamily:fonts.sans,fontSize:9.5,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",textDecoration:it.done?"line-through":"none",opacity:it.done?.5:1}}>{it.label}</div>
                 ))}
-                {dayTasks.length>3&&<div style={{fontFamily:fonts.sans,fontSize:9,color:C.textDim}}>+{dayTasks.length-3} more</div>}
+                {items.length>3&&<div style={{fontFamily:fonts.sans,fontSize:9,color:C.textDim}}>+{items.length-3} more</div>}
               </div>
             );
           })}
@@ -526,6 +599,53 @@ function TasksPage() {
               {!draft._new&&<Btn onClick={deleteDraft} color={C.red} style={{marginRight:"auto"}}>Delete</Btn>}
               <Btn onClick={()=>setDraft(null)}>Cancel</Btn>
               <Btn onClick={saveDraft} active color={C.red} style={{background:C.red,color:"#fff",border:`1px solid ${C.red}`,fontWeight:600,padding:"7px 18px"}}>Save Task</Btn>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Event Modal ── */}
+      {evDraft&&(
+        <div onClick={()=>setEvDraft(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000,padding:16}}>
+          <div onClick={e=>e.stopPropagation()} style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:16,padding:24,width:"100%",maxWidth:460,maxHeight:"90vh",overflowY:"auto"}}>
+            <h3 style={{fontFamily:fonts.serif,fontSize:22,fontWeight:600,color:C.text,margin:"0 0 18px"}}>{evDraft._new?"Add Event":"Edit Event"}</h3>
+            <label style={lbl}>Title</label>
+            <Input value={evDraft.title} onChange={v=>evUpd("title",v)} placeholder="e.g. Mom's Birthday, Dentist..." style={{marginBottom:14}}/>
+            <div style={{display:"flex",gap:12,marginBottom:14}}>
+              <div style={{flex:1}}>
+                <label style={lbl}>Type</label>
+                <select value={evDraft.type} onChange={e=>evUpd("type",e.target.value)} style={selStyle}>{EVENT_TYPES.map(t=><option key={t.v} value={t.v}>{t.label}</option>)}</select>
+              </div>
+              <div style={{flex:1}}>
+                <label style={lbl}>Repeats</label>
+                <select value={evDraft.recur} onChange={e=>evUpd("recur",e.target.value)} style={selStyle}>{RECURS.map(r=><option key={r.v} value={r.v}>{r.label}</option>)}</select>
+              </div>
+            </div>
+            <div style={{display:"flex",gap:12,marginBottom:18}}>
+              <div style={{flex:1}}>
+                <label style={lbl}>Time <span style={{color:C.textDim,textTransform:"none"}}>(blank = all-day)</span></label>
+                <input type="time" value={evDraft.time} onChange={e=>evUpd("time",e.target.value)} style={selStyle}/>
+              </div>
+              <div style={{flex:1}}>
+                {evDraft.recur==="weekly"?(
+                  <>
+                    <label style={lbl}>Day of week</label>
+                    <select value={evDraft.weekday} onChange={e=>evUpd("weekday",Number(e.target.value))} style={selStyle}>{WEEKDAYS.map((w,i)=><option key={w} value={i}>{w}</option>)}</select>
+                  </>
+                ):evDraft.recur==="daily"?(
+                  <div style={{fontFamily:fonts.sans,fontSize:12,color:C.textDim,paddingTop:26}}>Occurs every day</div>
+                ):(
+                  <>
+                    <label style={lbl}>{evDraft.recur==="annual"?"Date (repeats yearly)":"Date"}</label>
+                    <input type="date" value={evDraft.date} onChange={e=>evUpd("date",e.target.value)} style={selStyle}/>
+                  </>
+                )}
+              </div>
+            </div>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"flex-end",gap:10}}>
+              {!evDraft._new&&<Btn onClick={deleteEv} color={C.red} style={{marginRight:"auto"}}>Delete</Btn>}
+              <Btn onClick={()=>setEvDraft(null)}>Cancel</Btn>
+              <Btn onClick={saveEv} active color={C.purple} style={{background:C.purple,color:"#fff",border:`1px solid ${C.purple}`,fontWeight:600,padding:"7px 18px"}}>Save Event</Btn>
             </div>
           </div>
         </div>
