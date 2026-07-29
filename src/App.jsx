@@ -320,79 +320,216 @@ function BizHabitsPage() {
 // ═══════════════════════════════════════════════════════════════
 // KANBAN TASKS
 // ═══════════════════════════════════════════════════════════════
-const TASK_COLS = ["MIT","Today","In Progress","Tomorrow","This Week","Done"];
-const COL_COLORS = {MIT:C.accent,Today:C.blue,"In Progress":C.purple,Tomorrow:C.textMuted,"This Week":C.green,Done:C.green};
+const BOARDS = ["Next Month","This Month","Next Week","This Week","Tomorrow","Today"];
+const BOARD_COLORS = {"Next Month":C.purple,"This Month":C.blue,"Next Week":C.blue,"This Week":C.green,"Tomorrow":C.accent,"Today":C.green};
+const CATEGORIES = ["Personal","Work","Health"];
+const CAT_COLORS = {Personal:C.green,Work:C.blue,Health:C.purple};
+const PRIORITIES = [{v:"normal",label:"Normal",color:C.green},{v:"high",label:"High",color:C.accent},{v:"urgent",label:"Urgent",color:C.red}];
+const PRI_COLOR = {normal:C.green,high:C.accent,urgent:C.red};
+const pad2 = (n) => String(n).padStart(2,"0");
+const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+
+// Migrate legacy tasks ({text,col,tag,date}) to the new shape.
+function normalizeTask(t){
+  if(t && t.board!==undefined && t.title!==undefined) return t;
+  const legacyCol = t.col;
+  const board = BOARDS.includes(legacyCol) ? legacyCol : "Today";
+  return {
+    id: t.id || uid(),
+    title: t.title || t.text || "Untitled",
+    priority: t.priority || (t.tag==="Urgent"||legacyCol==="MIT" ? "urgent" : "normal"),
+    category: t.category || (CATEGORIES.includes(t.tag) ? t.tag : "Personal"),
+    board,
+    due: t.due || t.date || "",
+    allDay: t.allDay!==undefined ? t.allDay : true,
+    notes: t.notes || "",
+    done: t.done!==undefined ? t.done : (legacyCol==="Done"),
+  };
+}
 
 function TasksPage() {
-  const [tasks, setTasks] = useStore(SK.tasks, []);
-  const [adding, setAdding] = useState(null);
-  const [newText, setNewText] = useState("");
+  const [tasksRaw, setTasks] = useStore(SK.tasks, []);
   const [filter, setFilter] = useState("All");
+  const [search, setSearch] = useState("");
   const [dragId, setDragId] = useState(null);
+  const [draft, setDraft] = useState(null);
+  const [calDate, setCalDate] = useState(new Date());
 
-  const filters = ["All","Work","Personal","Urgent","Done"];
+  const list = (Array.isArray(tasksRaw)?tasksRaw:[]).map(normalizeTask);
 
-  const add = (col) => {
-    if(!newText.trim())return;
-    setTasks(p=>[...p,{id:uid(),text:newText.trim(),col,date:today(),tag:"Work"}]);
-    setNewText(""); setAdding(null);
+  // One-time migration: persist normalized shape if any legacy tasks exist.
+  useEffect(()=>{
+    const arr = Array.isArray(tasksRaw)?tasksRaw:[];
+    if(arr.some(t=>t.board===undefined||t.title===undefined)){
+      setTasks(arr.map(normalizeTask));
+    }
+  },[]); // eslint-disable-line
+
+  const openNew = (board="Today") => setDraft({id:uid(),title:"",priority:"normal",category:"Personal",board,due:today(),allDay:true,notes:"",done:false,_new:true});
+  const openEdit = (t) => setDraft({...t,_new:false});
+  const saveDraft = () => {
+    if(!draft.title.trim()) return;
+    const {_new,...clean} = draft;
+    setTasks(p=>{
+      const norm = (Array.isArray(p)?p:[]).map(normalizeTask);
+      return norm.some(x=>x.id===clean.id) ? norm.map(x=>x.id===clean.id?clean:x) : [...norm,clean];
+    });
+    setDraft(null);
   };
-  const move = (id, newCol) => setTasks(p=>p.map(t=>t.id===id?{...t,col:newCol}:t));
-  const remove = (id) => setTasks(p=>p.filter(t=>t.id!==id));
-  const toggleTag = (id) => setTasks(p=>p.map(t=>t.id===id?{...t,tag:t.tag==="Work"?"Personal":t.tag==="Personal"?"Urgent":"Work"}:t));
+  const deleteDraft = () => { setTasks(p=>(Array.isArray(p)?p:[]).map(normalizeTask).filter(x=>x.id!==draft.id)); setDraft(null); };
+  const toggleDone = (id) => setTasks(p=>(Array.isArray(p)?p:[]).map(normalizeTask).map(t=>t.id===id?{...t,done:!t.done}:t));
+  const removeTask = (id) => setTasks(p=>(Array.isArray(p)?p:[]).map(normalizeTask).filter(t=>t.id!==id));
+  const move = (id,board) => setTasks(p=>(Array.isArray(p)?p:[]).map(normalizeTask).map(t=>t.id===id?{...t,board}:t));
 
-  const tagColors = {Work:C.blue,Personal:C.green,Urgent:C.red};
-  const filtered = filter==="All"?tasks:filter==="Done"?tasks.filter(t=>t.col==="Done"):tasks.filter(t=>t.tag===filter);
+  const filters = ["All",...CATEGORIES,"Urgent","Done"];
+  const q = search.trim().toLowerCase();
+  const matchesSearch = (t) => !q || t.title.toLowerCase().includes(q) || (t.notes||"").toLowerCase().includes(q);
+  const visible = list.filter(t=>{
+    if(!matchesSearch(t)) return false;
+    if(filter==="Done") return t.done;
+    if(t.done) return false;
+    if(filter==="All") return true;
+    if(filter==="Urgent") return t.priority==="urgent";
+    return t.category===filter;
+  });
+
+  const upd = (k,v) => setDraft(d=>({...d,[k]:v}));
+  const selStyle = {background:C.bg,border:`1px solid ${C.border}`,borderRadius:8,color:C.text,fontFamily:fonts.sans,fontSize:13,padding:"8px 12px",width:"100%",boxSizing:"border-box",outline:"none",cursor:"pointer"};
+  const lbl = {fontFamily:fonts.sans,fontSize:11,fontWeight:600,color:C.textDim,textTransform:"uppercase",letterSpacing:1,marginBottom:6,display:"block"};
+
+  // Calendar grid
+  const cy = calDate.getFullYear(), cm = calDate.getMonth();
+  const startPad = new Date(cy,cm,1).getDay();
+  const daysInMonth = new Date(cy,cm+1,0).getDate();
+  const cells = [];
+  for(let i=0;i<startPad;i++) cells.push(null);
+  for(let d=1;d<=daysInMonth;d++) cells.push(d);
+  while(cells.length%7!==0) cells.push(null);
+  const tasksOn = (d) => { const ds=`${cy}-${pad2(cm+1)}-${pad2(d)}`; return list.filter(t=>t.due===ds); };
+  const todayStr = today();
 
   return (
     <div>
-      <SectionHead icon="📋" title="Tasks" quote={"\"You don't have to see the whole staircase. Just take the first step.\" — Martin Luther King Jr."} action={<Btn onClick={()=>setAdding(adding?"":TASK_COLS[0])} active={!!adding} color={C.red} style={{padding:"6px 16px",fontSize:13,fontWeight:600}}>+ Add Task</Btn>} />
+      <SectionHead icon="📋" title="Tasks" quote={"\"You don't have to see the whole staircase. Just take the first step.\" — Martin Luther King Jr."} action={<Btn onClick={()=>openNew()} active color={C.red} style={{padding:"6px 16px",fontSize:13,fontWeight:600}}>+ Add Task</Btn>} />
 
-      <div style={{display:"flex",gap:6,marginBottom:16,flexWrap:"wrap"}}>
-        {filters.map(f=><Btn key={f} onClick={()=>setFilter(f)} active={filter===f} color={f==="Urgent"?C.red:f==="Done"?C.green:C.accent}>{f==="Urgent"?"🔴 ":f==="Done"?"✓ ":""}{f}</Btn>)}
+      <div style={{display:"flex",gap:10,marginBottom:16,flexWrap:"wrap",alignItems:"center"}}>
+        <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+          {filters.map(f=><Btn key={f} onClick={()=>setFilter(f)} active={filter===f} color={f==="Urgent"?C.red:f==="Done"?C.green:C.accent}>{f==="Urgent"?"🔴 ":f==="Done"?"✓ ":""}{f}</Btn>)}
+        </div>
+        <div style={{flex:1,minWidth:180,maxWidth:280}}>
+          <Input value={search} onChange={setSearch} placeholder="🔍 Search tasks..." style={{fontSize:12,padding:"6px 12px"}}/>
+        </div>
       </div>
 
       <div className="dash-kanban">
-        {TASK_COLS.map(col=>{
-          const colTasks = filtered.filter(t=>t.col===col);
-          const colColor = COL_COLORS[col];
+        {BOARDS.map(board=>{
+          const colTasks = visible.filter(t=>t.board===board);
+          const colColor = BOARD_COLORS[board];
           return (
-            <div key={col}
+            <div key={board}
               onDragOver={e=>e.preventDefault()}
-              onDrop={e=>{e.preventDefault();if(dragId)move(dragId,col);setDragId(null);}}
-              style={{background:C.surfaceAlt,borderRadius:12,padding:10,minHeight:120,border:`1px solid ${C.border}`}}
+              onDrop={e=>{e.preventDefault();if(dragId)move(dragId,board);setDragId(null);}}
+              style={{background:C.surfaceAlt,borderRadius:12,padding:10,minHeight:140,border:`1px solid ${C.border}`}}
             >
-              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
-                <div style={{display:"flex",alignItems:"center",gap:6}}>
-                  {col==="MIT"&&<span style={{fontSize:12}}>⭐</span>}
-                  {col==="Done"&&<span style={{fontSize:12}}>✓</span>}
-                  <span style={{fontFamily:fonts.sans,fontSize:11,fontWeight:600,color:C.textDim,textTransform:"uppercase",letterSpacing:.5}}>{col}</span>
-                </div>
-                <span style={{fontFamily:fonts.mono,fontSize:11,color:C.textDim}}>{colTasks.length}</span>
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10,borderBottom:`2px solid ${colColor}44`,paddingBottom:6}}>
+                <span style={{fontFamily:fonts.sans,fontSize:11,fontWeight:700,color:colColor,textTransform:"uppercase",letterSpacing:.5}}>{board}</span>
+                <span style={{fontFamily:fonts.mono,fontSize:11,color:C.textDim,background:C.border,borderRadius:10,padding:"1px 7px"}}>{colTasks.length}</span>
               </div>
               {colTasks.map(t=>(
                 <div key={t.id} draggable onDragStart={()=>setDragId(t.id)} onDragEnd={()=>setDragId(null)}
-                  style={{background:C.surface,borderRadius:8,padding:"8px 10px",marginBottom:6,cursor:"grab",borderLeft:`3px solid ${tagColors[t.tag]||C.accent}`,transition:"all .15s"}}
+                  style={{background:C.surface,borderRadius:8,padding:"9px 11px",marginBottom:7,cursor:"grab",borderLeft:`3px solid ${PRI_COLOR[t.priority]}`,opacity:t.done?.55:1}}
                 >
-                  <div style={{fontFamily:fonts.sans,fontSize:12,color:C.text,marginBottom:4}}>{t.text}</div>
-                  <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-                    <button onClick={()=>toggleTag(t.id)} style={{background:"none",border:"none",cursor:"pointer",padding:0}}><Badge color={tagColors[t.tag]}>{t.tag}</Badge></button>
-                    <button onClick={()=>remove(t.id)} style={{background:"none",border:"none",color:C.textDim,cursor:"pointer",fontSize:9}}>✕</button>
+                  <div style={{fontFamily:fonts.sans,fontSize:12.5,color:C.text,marginBottom:6,lineHeight:1.35,textDecoration:t.done?"line-through":"none"}}>{t.title}</div>
+                  <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap",marginBottom:7}}>
+                    <span title={t.priority} style={{width:9,height:9,borderRadius:"50%",background:PRI_COLOR[t.priority],flexShrink:0}}/>
+                    <Badge color={CAT_COLORS[t.category]||C.textMuted}>{t.category}</Badge>
+                    {t.due&&<span style={{fontFamily:fonts.mono,fontSize:10,color:t.due<todayStr&&!t.done?C.red:C.textDim}}>📅 {t.due}</span>}
+                  </div>
+                  <div style={{display:"flex",alignItems:"center",gap:12,borderTop:`1px solid ${C.border}`,paddingTop:6}}>
+                    <button onClick={()=>openEdit(t)} title="Edit" style={{background:"none",border:"none",color:C.textDim,cursor:"pointer",fontSize:12,padding:0}}>✎</button>
+                    <button onClick={()=>toggleDone(t.id)} style={{background:"none",border:"none",color:t.done?C.green:C.textDim,cursor:"pointer",fontSize:11,fontFamily:fonts.sans,padding:0}}>✓ {t.done?"Undo":"Done"}</button>
+                    <button onClick={()=>removeTask(t.id)} title="Delete" style={{background:"none",border:"none",color:C.textDim,cursor:"pointer",fontSize:12,padding:0,marginLeft:"auto"}}>🗑</button>
                   </div>
                 </div>
               ))}
-              {adding===col?(
-                <div style={{marginTop:4}}>
-                  <Input value={newText} onChange={setNewText} placeholder="Task..." style={{marginBottom:6,fontSize:12}}/>
-                  <div style={{display:"flex",gap:4}}><Btn onClick={()=>add(col)} active color={C.green} style={{fontSize:11}}>Add</Btn><Btn onClick={()=>setAdding(null)} style={{fontSize:11}}>Cancel</Btn></div>
-                </div>
-              ):(
-                <button onClick={()=>{setAdding(col);setNewText("");}} style={{background:"none",border:`1px dashed ${C.border}`,borderRadius:8,padding:"6px 0",width:"100%",color:C.textDim,fontFamily:fonts.sans,fontSize:11,cursor:"pointer"}}>+ Add</button>
-              )}
+              <button onClick={()=>openNew(board)} style={{background:"none",border:`1px dashed ${C.border}`,borderRadius:8,padding:"6px 0",width:"100%",color:C.textDim,fontFamily:fonts.sans,fontSize:11,cursor:"pointer",marginTop:2}}>+ Add</button>
             </div>
           );
         })}
       </div>
+
+      {/* ── Calendar ── */}
+      <Card style={{marginTop:24,padding:16}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14,flexWrap:"wrap",gap:8}}>
+          <div style={{display:"flex",alignItems:"center",gap:8}}>
+            <Btn onClick={()=>setCalDate(new Date(cy,cm-1,1))} style={{padding:"4px 10px"}}>◀</Btn>
+            <Btn onClick={()=>setCalDate(new Date())} style={{padding:"4px 10px"}}>Today</Btn>
+            <Btn onClick={()=>setCalDate(new Date(cy,cm+1,1))} style={{padding:"4px 10px"}}>▶</Btn>
+            <span style={{fontFamily:fonts.serif,fontSize:18,fontWeight:500,color:C.text,marginLeft:6}}>{MONTHS[cm]} {cy}</span>
+          </div>
+          <span style={{fontFamily:fonts.sans,fontSize:11,color:C.textDim}}>Tasks plotted by due date</span>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:4}}>
+          {["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map(d=><div key={d} style={{fontFamily:fonts.sans,fontSize:10,fontWeight:600,color:C.textDim,textTransform:"uppercase",textAlign:"center",padding:"2px 0"}}>{d}</div>)}
+          {cells.map((d,i)=>{
+            if(d===null) return <div key={i} style={{minHeight:78}}/>;
+            const ds=`${cy}-${pad2(cm+1)}-${pad2(d)}`;
+            const dayTasks=tasksOn(d);
+            const isToday=ds===todayStr;
+            return (
+              <div key={i} style={{minHeight:78,background:C.bg,border:`1px solid ${isToday?C.accent:C.border}`,borderRadius:8,padding:4,overflow:"hidden"}}>
+                <div style={{fontFamily:fonts.mono,fontSize:10,color:isToday?C.accent:C.textDim,fontWeight:isToday?700:400,textAlign:"right",marginBottom:2}}>{d}</div>
+                {dayTasks.slice(0,3).map(t=>(
+                  <div key={t.id} onClick={()=>openEdit(t)} title={t.title} style={{background:`${PRI_COLOR[t.priority]}22`,borderLeft:`2px solid ${PRI_COLOR[t.priority]}`,borderRadius:3,padding:"1px 4px",marginBottom:2,cursor:"pointer",fontFamily:fonts.sans,fontSize:9.5,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",textDecoration:t.done?"line-through":"none",opacity:t.done?.5:1}}>{t.title}</div>
+                ))}
+                {dayTasks.length>3&&<div style={{fontFamily:fonts.sans,fontSize:9,color:C.textDim}}>+{dayTasks.length-3} more</div>}
+              </div>
+            );
+          })}
+        </div>
+      </Card>
+
+      {/* ── Edit / Add Modal ── */}
+      {draft&&(
+        <div onClick={()=>setDraft(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000,padding:16}}>
+          <div onClick={e=>e.stopPropagation()} style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:16,padding:24,width:"100%",maxWidth:460,maxHeight:"90vh",overflowY:"auto"}}>
+            <h3 style={{fontFamily:fonts.serif,fontSize:22,fontWeight:600,color:C.text,margin:"0 0 18px"}}>{draft._new?"Add Task":"Edit Task"}</h3>
+            <label style={lbl}>Title</label>
+            <Input value={draft.title} onChange={v=>upd("title",v)} placeholder="What needs doing?" style={{marginBottom:14}}/>
+            <div style={{display:"flex",gap:12,marginBottom:14}}>
+              <div style={{flex:1}}>
+                <label style={lbl}>Priority</label>
+                <select value={draft.priority} onChange={e=>upd("priority",e.target.value)} style={selStyle}>{PRIORITIES.map(p=><option key={p.v} value={p.v}>{p.label}</option>)}</select>
+              </div>
+              <div style={{flex:1}}>
+                <label style={lbl}>Category</label>
+                <select value={draft.category} onChange={e=>upd("category",e.target.value)} style={selStyle}>{CATEGORIES.map(c=><option key={c} value={c}>{c}</option>)}</select>
+              </div>
+            </div>
+            <div style={{display:"flex",gap:12,marginBottom:14}}>
+              <div style={{flex:1}}>
+                <label style={lbl}>Status / Board</label>
+                <select value={draft.board} onChange={e=>upd("board",e.target.value)} style={selStyle}>{BOARDS.map(b=><option key={b} value={b}>{b}</option>)}</select>
+              </div>
+              <div style={{flex:1}}>
+                <label style={lbl}>Due Date</label>
+                <input type="date" value={draft.due} onChange={e=>upd("due",e.target.value)} style={selStyle}/>
+              </div>
+            </div>
+            <label style={{display:"flex",alignItems:"center",gap:8,marginBottom:14,cursor:"pointer",fontFamily:fonts.sans,fontSize:13,color:C.textMuted}}>
+              <input type="checkbox" checked={draft.allDay} onChange={e=>upd("allDay",e.target.checked)} style={{width:16,height:16,cursor:"pointer"}}/>
+              All-day task <span style={{color:C.textDim,fontSize:11}}>(just check it off when done)</span>
+            </label>
+            <label style={lbl}>Notes</label>
+            <TextArea value={draft.notes} onChange={v=>upd("notes",v)} placeholder="Optional details..." rows={3} style={{marginBottom:18}}/>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"flex-end",gap:10}}>
+              {!draft._new&&<Btn onClick={deleteDraft} color={C.red} style={{marginRight:"auto"}}>Delete</Btn>}
+              <Btn onClick={()=>setDraft(null)}>Cancel</Btn>
+              <Btn onClick={saveDraft} active color={C.red} style={{background:C.red,color:"#fff",border:`1px solid ${C.red}`,fontWeight:600,padding:"7px 18px"}}>Save Task</Btn>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1681,8 +1818,9 @@ function DashboardPage() {
   const bh = Array.isArray(bizHabits) ? bizHabits : DEFAULT_BIZ;
   const bDone = bh.filter(h=>h.log && h.log[todayStr]).length;
   const bPct = bh.length>0?Math.round(bDone/bh.length*100):0;
-  const taskArr = Array.isArray(tasks) ? tasks : [];
-  const openTasks = taskArr.filter(t=>t.col!=="Done").length;
+  const taskArr = (Array.isArray(tasks) ? tasks : []).map(normalizeTask);
+  const openTasks = taskArr.filter(t=>!t.done).length;
+  const priorityTasks = taskArr.filter(t=>!t.done && (t.priority==="urgent" || t.due===todayStr)).slice(0,4);
   const bestStreak = allH.reduce((best,h)=>{if(!h.log)return best;let s=0;for(let i=0;i<60;i++){const d=new Date();d.setDate(d.getDate()-i);if(h.log[d.toISOString().split("T")[0]])s++;else break;}return Math.max(best,s);},0);
 
   const now = new Date();
@@ -1736,7 +1874,7 @@ function DashboardPage() {
         {/* Top Priority */}
         <Card style={{padding:16}}>
           <div style={{fontFamily:fonts.sans,fontSize:11,fontWeight:600,color:C.textDim,textTransform:"uppercase",letterSpacing:1,marginBottom:10}}>⭐ Top Priority Today</div>
-          {taskArr.filter(t=>t.col==="MIT").length===0?<div style={{color:C.textDim,fontSize:13}}>No MIT tasks. Add one below.</div>:taskArr.filter(t=>t.col==="MIT").slice(0,4).map(t=><div key={t.id} style={{padding:"6px 0",borderBottom:`1px solid ${C.border}`,fontFamily:fonts.sans,fontSize:13,color:C.text}}>{t.text}</div>)}
+          {priorityTasks.length===0?<div style={{color:C.textDim,fontSize:13}}>Nothing urgent or due today. 🎉</div>:priorityTasks.map(t=><div key={t.id} style={{padding:"6px 0",borderBottom:`1px solid ${C.border}`,fontFamily:fonts.sans,fontSize:13,color:C.text,display:"flex",alignItems:"center",gap:8}}><span style={{width:8,height:8,borderRadius:"50%",background:PRI_COLOR[t.priority],flexShrink:0}}/>{t.title}</div>)}
         </Card>
       </div>
     </div>
