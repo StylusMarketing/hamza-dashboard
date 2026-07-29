@@ -320,7 +320,7 @@ function BizHabitsPage() {
 // ═══════════════════════════════════════════════════════════════
 // KANBAN TASKS
 // ═══════════════════════════════════════════════════════════════
-const BOARDS = ["Next Month","This Month","Next Week","This Week","Tomorrow","Today"];
+const BOARDS = ["Today","Tomorrow","This Week","Next Week","This Month","Next Month"];
 const BOARD_COLORS = {"Next Month":C.purple,"This Month":C.blue,"Next Week":C.blue,"This Week":C.green,"Tomorrow":C.accent,"Today":C.green};
 const CATEGORIES = ["Personal","Work","Health"];
 const CAT_COLORS = {Personal:C.green,Work:C.blue,Health:C.purple};
