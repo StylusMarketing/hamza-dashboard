@@ -2164,7 +2164,7 @@ function Dashboard() {
         {/* Main */}
         <main style={{flex:1,minWidth:0,position:"relative"}}>
           <div style={{position:"absolute",top:0,left:0,right:0,height:200,background:`radial-gradient(ellipse at 70% 0%, ${C.accentSoft} 0%, transparent 50%)`,pointerEvents:"none",zIndex:0}}/>
-          <div className="dash-main-content" style={{position:"relative",zIndex:1,padding:"32px 40px 80px",maxWidth:1200}}>
+          <div className="dash-main-content" style={{position:"relative",zIndex:1,padding:"32px 40px 80px",maxWidth:1600}}>
             {pages[page] || <DashboardPage/>}
           </div>
         </main>
